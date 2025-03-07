@@ -1,0 +1,19 @@
+ Date Conversion Assembler Macro
+Subject:  Date Conversion Assembler Macro
+From:     Sergey Kenunen <sergey.kenunen@gmail.com>
+Date:     8/18/2023, 1:15 PM
+To:       sbgolob@cbttape.org
+
+Hello,
+
+Please find attached the code of Assembler macro, in case anyone
+is ever interested in date format conversion/verification in his
+Assembler code.
+
+All calculations are done using only 4 general registers: 0, 1,
+14, 15. No working storage required.
+
+Thank you
+Sergey Kenunen
+Attachments:
+DATECONV.MACRO.txt      83.9 KB

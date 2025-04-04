@@ -1,0 +1,1060 @@
+         MACRO
+&NAME    DATECONV &FORMATS,&FROM,&TO
+.*=====================================================================
+.* DATE FORMAT CONVERSION AND VALIDATION
+.*=====================================================================
+.*
+.* Allowed Date Formats:
+.*
+.*    GF - F'YYYYMMDD'       Gregorian date in binary form
+.*    GX - X'YYYYMMDD'       Gregorian date in hex form
+.*    G8 - PL8'YYYYMMDD'     Gregorian date in decimal packed form L8
+.*    G5 - PL5'YYYYMMDD'     Gregorian date in decimal packed form L5
+.*
+.*    JF - F'0YYYYJJJ'       Julian date in binary form
+.*    JX - X'0YYYYJJJ'       Julian date in hex form
+.*    J8 - PL8'0YYYYJJJ'     Julian date in decimal packed form L8
+.*    J4 - PL4'0YYYYJJJ'     Julian date in decimal packed form L4
+.*
+.*    RD - F'00RRRRRR'       Rata Die; day number from 0001/01/01
+.*
+.* Assumed Date Fields Definitions:
+.*    GFDATE DC   F'YYYYMMDD'       Gregorian date in binary form
+.*    GXDATE DC   X'YYYYMMDD'       Gregorian date in hex form
+.*    G8DATE DC   PL8'YYYYMMDD'     Gregorian date in PD form L8
+.*    G5DATE DC   PL5'YYYYMMDD'     Gregorian date in PD form L5
+.*    JFDATE DC   F'0YYYYJJJ'       Julian date in binary form
+.*    JXDATE DC   X'0YYYYJJJ'       Julian date in hex form
+.*    J8DATE DC   PL8'0YYYYJJJ'     Julian date in PD form L8
+.*    J4DATE DC   PL4'0YYYYJJJ'     Julian date in PD form L4
+.*    RDDATE DC   F'00RRRRRR'       Rata Die; day number
+.*
+.* Date Convert Options:
+.*    DATECONV f1-f2,from,to   convert and/or reformat date value
+.*    DATECONV GF-JF,GFDATE,JFDATE convert Gregorian F to Julian F
+.*    DATECONV JF-JX,JFDATE,JXDATE convert Julian F to Julian X
+.*    DATECONV JF-GF,JFDATE,GFDATE convert Julian F to Gregorian F
+.*    DATECONV JF-G5,JFDATE,G5DATE convert Julian F to Gregorian PL5
+.*    DATECONV JF-J8,JFDATE,J8DATE convert Julian F to Julian PL4
+.*    DATECONV GF-RD,GFDATE,RDDATE convert Gregorian F to day number
+.*
+.* Date difference calculation:
+.*    DATECONV GF-RD,GFDATE,RDDATE caculate day1 number from Gregorian
+.*    DATECONV JF-RD,JFDATE,(R15) caculate day2 number from Julian
+.*    S        R15,RDDATE    = days between "GFDATE" and "JFDATE" dates
+.*
+.* Date calculation before/after given period
+.*    DATECONV JX-RD,JXDATE,(R0) find day1 number (from X'0YYYYJJJ')
+.*    AHI  R0,-100             = 100 days before JXDATE
+.*    DATECONV RD-G5,(R0),G5DATE caculate new G5DATE (PL5'YYYYMMDD')
+.*
+.* Date validity veryfication:
+.*    DATECONV GF-GF,GFDATE,(R15)  convert date back and forth
+.*    IF   (C,(R15),NE,GFDATE)     compare old and new dates
+.*         process INVALID "GFDATE" format
+.*    ELSE  ,
+.*         process VALID "GFDATE" date format
+.*    ENDIF ,
+.*---------------------------------------------------------------------
+         AIF   ('&NAME' EQ '').NONAME
+&NAME    DS    0H
+.NONAME  ANOP
+.*---------------------------------------------------------------------
+         LCLC  &P
+&P       SETC  '#&SYSNDX'        unique labels prefix
+.*
+.*---------------------------------------------------------------------
+.* Calculation of required date conversion tables
+.*---------------------------------------------------------------------
+.* Month (normal) length definitions, in days
+ LCLA  &JAN,&FEB,&MAR,&APR,&MAY,&JUN,&JUL,&AUG,&SEP,&OCT,&NOV,&DEC
+&JAN     SETA  31
+&FEB     SETA  28
+&MAR     SETA  31
+&APR     SETA  30
+&MAY     SETA  31
+&JUN     SETA  30
+&JUL     SETA  31
+&AUG     SETA  31
+&SEP     SETA  30
+&OCT     SETA  31
+&NOV     SETA  30
+&DEC     SETA  31
+.*
+.* Recalculate days in a year from MAR (00) to FEB (11)
+.* to shift the start of a year to Mar 1st of previous year
+         LCLA  &M0,&M1,&M2,&M3,&M4,&M5,&M6,&M7,&M8,&M9,&M10,&M11
+&M0      SETA  0                  0 days before March begins
+&M1      SETA  &M0+&MAR          31 days before April begins
+&M2      SETA  &M1+&APR          61 days before May begins
+&M3      SETA  &M2+&MAY          91 days before June begins
+&M4      SETA  &M3+&JUN         122 days before July begins
+&M5      SETA  &M4+&JUL         153 days before August begins
+&M6      SETA  &M5+&AUG         184 days before September begins
+&M7      SETA  &M6+&SEP         214 days before October begins
+&M8      SETA  &M7+&OCT         245 days before November begins
+&M9      SETA  &M8+&NOV         275 days before December begins
+&M10     SETA  &M9+&DEC         306 days before January begins
+&M11     SETA  &M10+&JAN        337 days before February begins
+.*
+         LCLA  &DYEAR,&MYEAR
+&DYEAR   SETA  &M11+&FEB        365 days before next year begins
+&MYEAR   SETA  12               12 months in each year
+.*
+.* Recalculate days in a year from Jan (01) to DEC (12)
+         LCLA  &K1,&K2,&K3,&K4,&K5,&K6,&K7,&K8,&K9,&K10,&K11,&K12
+&K1      SETA  0                  0 days before January begins
+&K2      SETA  &K1+&JAN          31 days before February begins
+&K3      SETA  &K2+&FEB          59 days before March begins
+&K4      SETA  &K3+&MAR          90 days before April begins
+&K5      SETA  &K4+&APR         120 days before May begins
+&K6      SETA  &K5+&MAY         151 days before June begins
+&K7      SETA  &K6+&JUN         181 days before July begins
+&K8      SETA  &K7+&JUL         212 days before August begins
+&K9      SETA  &K8+&AUG         243 days before September begins
+&K10     SETA  &K9+&SEP         273 days before October begins
+&K11     SETA  &K10+&OCT        304 days before November begins
+&K12     SETA  &K11+&NOV        334 days before December begins
+.*                 +&DEC        365 full year
+         LCLA  &RDOFF
+&RDOFF   SETA  &M10    Rata Die offset to Mar 1st of previous year
+.*
+.* Full table of months definition
+         LCLC  &MONTAB,&DAYTAB
+.* Twelve fields, one for the first day of each month
+&MONTAB  SETC  '&M0,&M1,&M2,&M3,&M4,&M5,&M6,&M7,&M8,&M9,&M10,&M11'
+&MONTAB  SETC  '&MONTAB,&DYEAR'
+&DAYTAB  SETC  '&K1,&K2,&K3,&K4,&K5,&K6,&K7,&K8,&K9,&K10,&K11,&K12'
+&DAYTAB  SETC  '&DAYTAB,&DYEAR'
+.*   Assume R14 to be the table base address, R1 - index of the month
+&MDAYNUM SETC  '0(14)'    - reference to the beginning of month
+&IDAYNUM SETC  '0(1,14)'  - indexed reference to the beginning of month
+&NEXTMON SETC  '2(14)'    - reference to the next month definition
+.*
+.* Number of years to add/skip each leap day
+         LCLA  &Y1,&Y4,&Y100,&Y400,&Y3200
+&Y1      SETA  1               single year
+&Y4      SETA  4               years with one leap year
+&Y100    SETA  100             years with skipped leap year
+&Y400    SETA  400             years with one extra leap year
+&Y3200   SETA  3200            years with skipped leap year
+.* Numbers of subgroups in each group of years
+         LCLA  &N1,&N4,&N100,&N400,&N3200
+&N1      SETA  1               count of one single year
+&N4      SETA  &Y4/&Y1         count of single years within 4 years
+&N100    SETA  &Y100/&Y4       count of 4 years within 100 years
+&N400    SETA  &Y400/&Y100     count of 100 years within 400 years
+&N3200   SETA  &Y3200/&Y400    count of 400 years within 3200 years
+.* Numbers of days in each group of years
+         LCLA  &D1,&D4,&D100,&D400,&D3200
+&D1      SETA  &DYEAR*&N1      days in the "group" of a single year
+&D4      SETA  &D1*&N4+1       days in 4 years in a row (+ 1 leap)
+&D100    SETA  &D4*&N100-1     days in 100 years in a row (- 1 leap)
+&D400    SETA  &D100*&N400+1   days in 400 years in a row (+ 1 leap)
+&D3200   SETA  &D400*&N3200-1  days in 3200 years in a row (- 1 leap)
+.* Rows of the Table of Years definition
+         LCLC  &T1,&T4,&T100,&T400,&T3200
+.* Three fields in each row: '#years,#days,leap'
+&T1      SETC  '&Y1,&D1,0'        table row for 1 single year
+&T4      SETC  '&Y4,&D4,1'        table row for 4 years (1 extra day)
+&T100    SETC  '&Y100,&D100,0'    table row for 100 years
+&T400    SETC  '&Y400,&D400,1'    table row for 400 years (1 extra day)
+&T3200   SETC  '&Y3200,&D3200,0'  table row for 3200 years
+         LCLC  &J1,&J4,&J100,&J400,&J3200
+.* Two fields in each row: '#years,leap'
+&J1      SETC  '&Y1,0'            table row for 1 single year
+&J4      SETC  '&Y4,1'            table row for 4 years (1 extra day)
+&J100    SETC  '&Y100,0'          table row for 100 years
+&J400    SETC  '&Y400,1'          table row for 400 years (1 extra day)
+&J3200   SETC  '&Y3200,0'         table row for 3200 years
+.*
+.* Full Table of Years definition
+         LCLC  &NRTAB,&JRTAB
+.* Five rows for five groups of years
+&NRTAB   SETC  '&T3200,&T400,&T100,&T4,&T1'   for years from 03/01/0000
+&JRTAB   SETC  '&J3200,&J400,&J100,&J4,&J1'   for years from 01/01/0001
+.*      Assume R14 to be the table row pointer
+         LCLC  &NRYEARF,&NRDAYF,&NRLEAP,&NRNEXT
+&NRYEARF SETC  '0(14)'    - reference to the group size in years
+&NRYEARH SETC  '2(14)'    - the same group size as halfword
+&NRDAYF  SETC  '4(14)'    - reference to the group size in days
+&NRLEAP  SETC  '8(14)'    - reference to the leap day field
+&NRNEXT  SETC  '12(14)'   - reference to the next group definition
+         LCLC  &JRYEARF,&JRLEAP,&JRNEXT
+&JRYEARF SETC  '0(14)'    - reference to the group size in years
+&JRLEAP  SETC  '4(14)'    - reference to the leap day field
+&JRNEXT  SETC  '8(14)'    - reference to the next group definition
+.*
+.*=====================================================================
+.* Common code to load input parameter into REG 0
+.*---------------------------------------------------------------------
+.LOAD    ANOP  ,
+         LCLC  &FROM0,&FROM1,&FROM4
+.*      References to parts of decimal input field
+&FROM0   SETC  '&FROM'
+&FROM1   SETC  '&FROM+1'
+&FROM4   SETC  '&FROM+4'
+         AIF   ('&FROM'(1,1) NE '(').FROMFRM
+&FROM0   SETC  '0&FROM'
+&FROM1   SETC  '1&FROM'
+&FROM4   SETC  '4&FROM'
+.*
+.FROMFRM ANOP
+         LCLC  &F1
+&F1      SETC  '&FORMATS'(1,2)     input format code
+.*
+.*      Special processing for packed decimal input values
+         AIF   ('&F1' EQ 'G8').FROMPG8
+         AIF   ('&F1' EQ 'G5').FROMPG5
+         AIF   ('&F1' EQ 'J8').FROMPJ8
+         AIF   ('&F1' EQ 'J4').FROMPJ4
+.*      Special processing for register input data
+         AIF   ('&FROM'(1,1) EQ '(').FROMREG
+         L     0,&FROM       load input value
+         AGO   .LOADED
+.*      Special processing for REG 0 input data
+.FROMREG AIF   ('&FROM(1)' EQ '0' OR '&FROM(1)' EQ 'R0').FROMR0
+         LR    0,&FROM(1)    load input value
+         AGO   .LOADED
+.*
+.FROMR0  ANOP
+ MNOTE *,'Input value used from REG 0'
+         AGO   .LOADED
+.*
+.FROMPG8 ANOP  ,
+ MNOTE *,'Input data as PL8''YYYYMMDD'' from &FROM0'
+         ICM   0,B'1111',&FROM0     X'0000000Y'
+         ICM   1,B'1111',&FROM4     X'YYYMMDDC'
+         SLDL  0,28                 X'YYYYMMDD'
+         AGO   .LOADED
+.*
+.FROMPG5 ANOP  ,
+ MNOTE *,'Input data as PL5''YYYYMMDD'' from &FROM0'
+         IC    0,&FROM0             X'......0Y'
+         ICM   1,B'1111',&FROM1     X'YYYMMDDC'
+         SLDL  0,28                 X'YYYYMMDD'
+         AGO   .LOADED
+.*
+.FROMPJ8 ANOP  ,
+ MNOTE *,'Input data as PL8''YYYYJJJ'' from &FROM0'
+         ICM   0,B'1111',&FROM4     X'YYYYJJJC'
+         SRL   0,4                  X'0YYYYJJJ'
+         AGO   .LOADED
+.*
+.FROMPJ4 ANOP  ,
+ MNOTE *,'Input data as PL4''YYYYJJJ'' from &FROM0'
+         ICM   0,B'1111',&FROM0     X'YYYYJJJC'
+         SRL   0,4                  X'0YYYYJJJ'
+         AGO   .LOADED
+.*
+.LOADED  ANOP
+.*=====================================================================
+.* Switch to conversion type
+.*---------------------------------------------------------------------
+.*     Input format GF converted to R0=F'YYYYMMDD' at entry
+ AIF   ('&FORMATS' EQ 'GF-GX').GF#GX   F'YYYYMMDD'->X'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'GF-G8').GF#GX   F'YYYYMMDD'->PL8'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'GF-G5').GF#GX   F'YYYYMMDD'->PL5'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'GF-JF').GF#JF   F'YYYYMMDD'->F'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'GF-JX').GF#JX   F'YYYYMMDD'->X'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'GF-J8').GF#JX   F'YYYYMMDD'->PL8'YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'GF-J4').GF#JX   F'YYYYMMDD'->PL4'YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'GF-RD').GF#RD   F'YYYYMMDD'->F'00RRRRRR'
+ AIF   ('&FORMATS' EQ 'GF-GF').GF#GF   date validation
+.*
+.*     Input format GX converted to R0=X'YYYYMMDD' at entry
+ AIF   ('&FORMATS' EQ 'GX-GF').GX#GF   X'YYYYMMDD'->F'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'GX-G8').RETREG0 X'YYYYMMDD'->PL8'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'GX-G5').RETREG0 X'YYYYMMDD'->PL5'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'GX-JF').GX#JF   X'YYYYMMDD'->F'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'GX-JX').GX#JX   X'YYYYMMDD'->X'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'GX-J8').GX#JX   X'YYYYMMDD'->PL8'YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'GX-J4').GX#JX   X'YYYYMMDD'->PL4'YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'GX-RD').GX#RD   X'YYYYMMDD'->F'00RRRRRR'
+ AIF   ('&FORMATS' EQ 'GX-GX').GX#GX   date validation
+.*
+.*     Input format RG is passed as R0=F'00RRRRRR' at entry
+ AIF   ('&FORMATS' EQ 'RD-GF').RD#GF   F'00RRRRRR'->F'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'RD-GX').RD#GX   F'00RRRRRR'->X'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'RD-G8').RD#GX   F'00RRRRRR'->PL8'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'RD-G5').RD#GX   F'00RRRRRR'->PL5'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'RD-JF').RD#JF   F'00RRRRRR'->F'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'RD-JX').RD#JX   F'00RRRRRR'->X'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'RD-J8').RD#JX   F'00RRRRRR'->PL8'YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'RD-J4').RD#JX   F'00RRRRRR'->PL4'YYYYJJJ'
+.*
+.*     Input format JF converted to R0=F'0YYYYJJJ' at entry
+ AIF   ('&FORMATS' EQ 'JF-GF').JF#GF   F'0YYYYJJJ'->F'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'JF-G8').JF#GX   F'0YYYYJJJ'->PL8'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'JF-G5').JF#GX   F'0YYYYJJJ'->PL5'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'JF-GX').JF#GX   F'0YYYYJJJ'->X'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'JF-JX').JF#JX   F'0YYYYJJJ'->X'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'JF-J8').JF#JX   F'0YYYYJJJ'->PL8'YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'JF-J4').JF#JX   F'0YYYYJJJ'->PL4'YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'JF-RD').JF#RD   F'0YYYYJJJ'->F'00RRRRRR'
+ AIF   ('&FORMATS' EQ 'JF-JF').JF#JF   date validation
+.*
+.*     Input format JX converted to R0=X'0YYYYJJJ' at entry
+ AIF   ('&FORMATS' EQ 'JX-GF').JX#GF   X'0YYYYJJJ'->F'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'JX-G8').JX#GX   X'0YYYYJJJ'->PL8'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'JX-G5').JX#GX   X'0YYYYJJJ'->PL5'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'JX-GX').JX#GX   X'0YYYYJJJ'->X'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'JX-JF').GX#GF   X'0YYYYJJJ'->F'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'JX-J8').RETREG0 X'0YYYYJJJ'->PL8'YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'JX-J4').RETREG0 X'0YYYYJJJ'->PL4'YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'JX-RD').JX#RD   X'0YYYYJJJ'->F'00RRRRRR'
+ AIF   ('&FORMATS' EQ 'JX-JX').JX#JX   date validation
+.*
+.*     Input format G8 converted to R0=X'YYYYMMDD' at entry
+ AIF   ('&FORMATS' EQ 'G8-GF').GX#GF   PL8'YYYYMMDD'->F'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'G8-G5').RETREG0 PL8'YYYYMMDD'->PL5'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'G8-GX').RETREG0 PL8'YYYYMMDD'->X'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'G8-JF').GX#GF   PL8'YYYYMMDD'->F'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'G8-JX').GX#JX   PL8'YYYYMMDD'->X'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'G8-J8').GX#JX   PL8'YYYYMMDD'->PL8'YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'G8-J4').GX#JX   PL8'YYYYMMDD'->PL4'YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'G8-RD').GX#RD   PL8'YYYYMMDD'->F'00RRRRRR'
+ AIF   ('&FORMATS' EQ 'G8-G8').G8#G8   date validation
+.*
+.*     Input format G5 converted to R0=X'YYYYMMDD' at entry
+ AIF   ('&FORMATS' EQ 'G5-GF').GX#GF   PL5'YYYYMMDD'->F'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'G5-G8').RETREG0 PL5'YYYYMMDD'->PL8'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'G5-GX').RETREG0 PL5'YYYYMMDD'->X'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'G5-JF').GX#GF   PL5'YYYYMMDD'->F'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'G5-JX').GX#JX   PL5'YYYYMMDD'->X'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'G5-J8').GX#JX   PL5'YYYYMMDD'->PL8'YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'G5-J4').GX#JX   PL5'YYYYMMDD'->PL4'YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'G5-RD').GX#RD   PL5'YYYYMMDD'->F'00RRRRRR'
+ AIF   ('&FORMATS' EQ 'G5-G5').G5#G5   date validation
+.*
+.*     Input format J8 converted to R0=X'0YYYYJJJ' at entry
+ AIF   ('&FORMATS' EQ 'J8-GF').JX#GF   PL8'YYYYJJJ'->F'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'J8-G8').JX#GX   PL8'YYYYJJJ'->PL8'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'J8-G5').JX#GX   PL8'YYYYJJJ'->PL5'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'J8-GX').JX#GX   PL8'YYYYJJJ'->X'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'J8-JF').JX#JF   PL8'YYYYJJJ'->F'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'J8-JX').RETREG0 PL8'YYYYJJJ'->X'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'J8-J4').RETREG0 PL8'YYYYJJJ'->PL4'YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'J8-RD').JX#RD   PL8'YYYYJJJ'->F'00RRRRRR'
+ AIF   ('&FORMATS' EQ 'J8-J8').J8#J8    date validation
+.*
+.*     Input format J4 converted to R0=X'0YYYYJJJ' at entry
+ AIF   ('&FORMATS' EQ 'J4-GF').JX#GF   PL4'YYYJJJ'->F'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'J4-G8').JX#GX   PL4'YYYJJJ'->PL8'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'J4-G5').JX#GX   PL4'YYYJJJ'->PL5'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'J4-GX').JX#GX   PL4'YYYJJJ'->X'YYYYMMDD'
+ AIF   ('&FORMATS' EQ 'J4-JF').JX#JF   PL4'YYYJJJ'->F'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'J4-JX').RETREG0 PL4'YYYJJJ'->X'0YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'J4-J8').RETREG0 PL4'YYYJJJ'->PL8'YYYYJJJ'
+ AIF   ('&FORMATS' EQ 'J4-RD').JX#RD   PL4'YYYJJJ'->F'00RRRRRR'
+ AIF   ('&FORMATS' EQ 'J4-J4').J4#J4   date validation
+.*
+ MNOTE 8,'INVALID CONVERSION SPECIFICATION: &FORMATS'
+         MEXIT
+.*=====================================================================
+.* Code to convert Gregorian date bin format to Julian date bin format
+.*---------------------------------------------------------------------
+.*
+.*                 Steps of conversion
+.*
+.* | ----R0----- | ----R1----- | ----R14---- | ----R15---- |
+.* | F'YYYYMMDD' |             |             |             |
+.* |             |             |             | F'YYYYMMDD' |
+.* | F'0000MMDD' | F'0000YYYY' |             |             |
+.* |             |             | A(&JRTAB)   |             |
+.* | F'00000000' | F'0000YYYY' |             |             |
+.* | F'00000YYY' | F'000000NN' |             |             |
+.* |             |             | A(...+next) |             |
+.* |             | F'00000YYY' |             |             |
+.* | F'00000000' | F'00000YYY' |             |             |
+.* | F'000000YY' | F'0000000N' |             |             |
+.* |             |             | A(...+next) |             |
+.* |             | F'000000YY' |             |             |
+.* | F'00000000' | F'000000YY' |             |             |
+.* | F'0000000Y' | F'0000000n' |             |             |
+.* |             |             | A(...+next) |             |
+.* |             | F'0000000Y' |             |             |
+.* | F'00000000' | F'0000000Y' |             |             |
+.* | F'00000000' | F'00000000' |             |             |
+.* |             |             |             |             |
+.* |             | F'YYYYMMDD' |             |             |
+.* | F'00000000' | F'YYYYMMDD' |             |             |
+.* | F'0000MMDD' | F'0000YYYY' |             |             |
+.* |             |             |             | F'0000YYYY' |
+.* |             |             |             | F'0YYYY000' |
+.* | F'00000000' | F'0000MMDD' |             |             |
+.* | F'000000DD' | F'000000MM' |             |             |
+.* | F'00000ddd' |             |             |             |
+.* |             |             |             | F'0YYYYddd' |
+.* |             |             | A(&DAYTAB)  |             |
+.* |             | F'000000mm' |             |             |
+.* |             | F'000000ii' |             |             |
+.* |             |             |             | F'0YYYYJJJ' |
+.*.....................................................................
+.GF#JF   ANOP  ,               F'YYYYMMDD'
+ MNOTE *,'Gregorian date as F''YYYYMMDD'' from &FROM'
+ MNOTE *,'Julian date as F''0YYYYJJJ'' into &TO'
+         LR    15,0            F'YYYYMMDD'
+         SRDL  0,32            F'00000000,YYYYMMDD'
+         D     0,=F'10000'     F'0000MMDD',F'0000YYYY'
+.*
+         LA    14,=F'&JRTAB'   table of leap year groups
+&P.A     EQU   *
+*       Divide remaining years by group size
+         XR    0,0             F'00000000,0000YYYY'
+         D     0,&JRYEARF      F'00000YYY,000000NN'
+         LTR   0,0             YYY = 0? No years remaining?
+         JNP   &P.Z            continue to days calculation
+         LA    14,&JRNEXT      bump to the next table row
+         LR    1,0             F'00000YYY'
+         J     &P.A            repeat with next years group
+&P.Z     EQU   *
+.*
+         LR    1,15            F'YYYYMMDD'
+*       Separate the year to appropriate position of full word
+         XR    0,0             F'00000000,YYYYMMDD'
+         D     0,=F'10000'     F'0000MMDD',F'0000YYYY'
+         LR    15,1            F'0000YYYY'
+         MHI   15,+1000        F'0YYYY000'
+*       Use the month to detect leap day effect
+         SRDL  0,32            F'00000000,0000MMDD'
+         D     0,=F'100'       F'000000DD',F'000000MM'
+*       Days before March 1st are not affected by the leap year
+         CHI   1,+3            MM < 3? It's Jan or Feb?
+         JL    *+8             skip adding leap day, if any
+         A     0,&JRLEAP       F'00000jjj'  =DD+leap
+*       Combine part days and year
+         AR    15,0            F'0YYYYjjj'
+.*
+*       Add all days of the previous months, by month as index
+         LA    14,=H'&DAYTAB'  table of month start days
+         BCTR  1,0             =MM-1 start month from 0 to 11
+         SLL   1,1             =(MM-1)*2 = tab index value
+         AH    15,&IDAYNUM     F'0YYYYJJJ' =DD+leap+premonth
+.*
+         AGO   .RETURN         F'0YYYYJJJ'
+.*=====================================================================
+.* Code to convert Julian date bin format to Gregorian date bin format
+.*---------------------------------------------------------------------
+.*
+.*                 Steps of conversion
+.*
+.*            | ----R0----- | ----R1----- | ----R14---- | ----R15---- |
+.*            | F'0YYYYJJJ' |             |             |             |
+.*            |             |             |             | F'0YYYYJJJ' |
+.*            | F'00000000' | F'0YYYYJJJ' |             |             |
+.*            | F'00000JJJ' | F'0000YYYY' |             |             |
+.*            |             |             | A(&JRTAB)   |             |
+.*            | F'00000000' | F'0000YYYY' |             |             |
+.*            | F'00000YYY' | F'000000NN' |             |             |
+.*            | F'00000YYY' | F'00000YYY' |             |             |
+.*            |             |             | A(...+next) |             |
+.*            | F'00000000' | F'00000YYY' |             |             |
+.*            | F'000000YY' | F'000000NN' |             |             |
+.*            | F'000000YY' | F'000000YY' |             |             |
+.*            |             |             | A(...+next) |             |
+.*            | F'00000000' | F'000000YY' |             |             |
+.*            | F'0000000Y' | F'0000000N' |             |             |
+.*            | F'0000000Y' | F'0000000Y' |             |             |
+.*            |             |             | A(...+next) |             |
+.*            | F'00000000' | F'0000000Y' |             |             |
+.*            | F'00000000' | F'0000000N' |             |             |
+.*            | F'00000000' | F'00000000' |             |             |
+.*            |             |             | stop loop   |             |
+.* leap day-> | F'0000000L' |             |             |             |
+.*            |             |             | F'00000000' | F'0YYYYJJJ' |
+.*            |             |             | F'00000JJJ' | F'0000YYYY' |
+.*03/02-12/31?|             |             |      JJJ-L  |             |
+.*            |             |             |             |             |
+.*01/01-02/28?|             | F'00000000' |             |             |
+.*            |             |             | JJJ<>day1st?|             |
+.*            |             | F'00000002' |             |             |
+.*            |             |             | JJJ<>day1st?|             |
+.*            |             | F'00000004' |             |             |
+.*            |             |             | JJJ<>day1st?|             |
+.*            |             | F'00000006' |             |             |
+.*            |             |             | JJJ<>day1st?|             |
+.*            |             | F'00000004' |             |             |
+.*            |             | . . . . . . | stop loop   |             |
+.*            |             |             | F'000000DD' |             |
+.*            |             | F'000000mm' |             |             |
+.*            |             | F'000000MM' |             |             |
+.*            |             | F'0000MM00' |             |             |
+.*            |             |             | F'0000MMDD' |             |
+.*            |             |             |-------------|             |
+.*02/29-03/01?|             |             | F'00000229' |             |
+.*            |             |             |   or /0301  |             |
+.*            |             |             |-------------|             |
+.*            |             |             |             | F'YYYY0000' |
+.*            |             |             |             | F'YYYYMMDD' |
+.*.....................................................................
+.JF#GF   ANOP  ,               F'0YYYYJJJ'
+ MNOTE *,'Julian date as F''0YYYYJJJ'' from &FROM'
+ MNOTE *,'Gregorian date as F''YYYYMMDD'' into &TO'
+         LR    15,0            F'0YYYYJJJ'
+         SRDL  0,32            F'00000000,0YYYYJJJ'
+         D     0,=F'1000'      F'00000JJJ',F'0000YYYY'
+.*
+         LA    14,=F'&JRTAB'   table of leap year groups
+&P.X     EQU   *
+*       Find the group of leap/non-leap years where the year ends
+         XR    0,0             F'00000000,0000YYYY'
+         D     0,&JRYEARF      F'00000YYY,000000NN'
+         LTR   1,0             YYY = 0? -> stop dividing
+         JNP   &P.Y            continue to get leap year flag
+         LA    14,&JRNEXT      bump to the next table row
+         J     &P.X            repeat with next years group
+&P.Y     EQU   *
+         L     0,&JRLEAP       keep R0=1/0 = leap year or not?
+.*
+*       Find out the Gregorian month and day from the Julian day
+         XR    14,14           F'00000000,0YYYYJJJ'
+         D     14,=F'1000'     F'00000JJJ',F'0000YYYY'
+*       Consider 3 cases: 01/01-02/28; 02/29; 03/02-12/31
+         CHI   14,&JAN+&FEB+1  compare to Feb 29th?
+         JE    &P.Q            go to choose Feb 29th or March 1st
+         JL    &P.P            go calculate for Jan 1st - Feb 28th
+&P.R     EQU   *               here: March 2nd - December 31st
+         SR    14,0            sub 1 for leap year only (otherwise 0)
+&P.P     EQU   *               here: Jan 1st - Feb 28th
+         XR    1,1             initialize month index from 0
+&P.K     EQU   *               loop to choose month
+         CH    14,=H'&DAYTAB'(1) compare day using MM as index
+         JNH   &P.1            break search when reached the month
+         CHI   1,+11*2         fool-proof check for end-of-table
+         JH    &P.1            break loop when wrong data
+         LA    1,2(1)          increase month index
+         J     &P.K            repeat for the next month
+&P.1     EQU   *               produce final Gregorian month, and day
+         AHI   1,-2            return index back to the correct month
+         SH    14,=H'&DAYTAB'(1)  change JJJ to DD: F'000000DD'
+         SRA   1,1             change month index to month number
+         AHI   1,+1            F'000000MM'
+         MHI   1,+100          F'0000MM00'
+         AR    14,1            F'0000MMDD'
+         J     &P.0            go combine the final date
+.*
+&P.Q     EQU   *               here choose: Feb 29th or March 1st?
+         LHI   14,+0229        F'00000229' as for leap year
+         LTR   0,0             leap year?
+         JNZ   &P.0            do not change to March 1st, if non-leap
+         LHI   14,+0301        F'00000301' as normal March 1st
+.*
+&P.0     EQU   *
+*       Combine full Gregorian date from its components
+         MHI   15,+10000       F'YYYY0000'
+         AR    15,14           F'YYYYMMDD'
+.*
+         AGO   .RETURN         F'YYYYMMDD'
+.*=====================================================================
+.* Code to convert Gregorian date binary format to hex value
+.* as well as Julian date binary format to hex value
+.*---------------------------------------------------------------------
+.*
+.*                 Steps of conversion
+.*
+.*            | ----R0----- | ----R1----- | ----R14---- | ----R15---- |
+.*            | F'YYYYMMDD' |             |             |             |
+.*            |             |             |             | X'00000000' |
+.*            |             |             | F'00000008' |             |
+.*            | F'YYYYMMDD' | F'YYYYMMDD' |             |             |
+.*            | F'00000000' | F'YYYYMMDD' |             |             |
+.*            | F'0000000D' | F'0YYYYMMD' |             |             |
+.*            | F'D0000000' |             |             |             |
+.*            |             |             |             | X'D0000000' |
+.*            |             |             |             | X'0D000000' |
+.*            |             |             | F'00000007' |             |
+.*            | F'00000000' | F'0YYYYMMD' |             |             |
+.*            | F'0000000D' | F'00YYYYMM' |             |             |
+.*            | F'D0000000' |             |             |             |
+.*            |             |             |             | X'DD000000' |
+.*            |             |             |             | X'0DD00000' |
+.*            |             |             | F'00000006' |             |
+.*            | F'00000000' | F'00YYYYMM' |             |             |
+.*            | F'0000000M' | F'000YYYYM' |             |             |
+.*            | F'M0000000' |             |             |             |
+.*            |             |             |             | X'MDD00000' |
+.*            |             |             |             | X'0MDD0000' |
+.*            |             |             | F'00000005' |             |
+.*            | F'00000000' | F'000YYYYM' |             |             |
+.*            | F'0000000M' | F'0000YYYY' |             |             |
+.*            | F'M0000000' |             |             |             |
+.*            |             |             |             | X'MMDD0000' |
+.*            |             |             |             | X'0MMDD000' |
+.*            |             |             | F'00000004' |             |
+.*            | F'00000000' | F'000YYYYM' |             |             |
+.*            | F'0000000M' | F'0000YYYY' |             |             |
+.*            | F'M0000000' |             |             |             |
+.*            |             |             |             | X'MMDD0000' |
+.*            |             |             |             | X'0MMDD000' |
+.*            |             |             | ........... |             |
+.*            |             |             | F'00000001' |             |
+.*            | F'00000000' | F'0000000Y' |             |             |
+.*            | F'0000000Y' | F'00000000' |             |             |
+.*            | F'Y0000000' |             |             |             |
+.*            |             |             |             | X'YYYYMMDD' |
+.*            |             |             | F'00000000' |             |
+.*.....................................................................
+.GF#GX   ANOP  ,          F'YYYYMMDD'
+ MNOTE *,'Gregorian date as F''YYYYMMDD'' from &FROM'
+ MNOTE *,'Gregorian date as X''YYYYMMDD'' into &TO'
+         XR    15,15      prepare accumulator
+         LA    14,8       number of digits = 8
+         LR    1,0        F'YYYYMMDD'
+&P.L     SRL   15,4                X'00000000'...X'0YYYMMDD'
+         XR    0,0        F'00000000,YYYYMMDD'...F'00000000,0000000Y'
+         D     0,=F'10'   F'0000000D,0YYYYMMD'...F'0000000Y,00000000'
+         SLL   0,28                X'D0000000'...X'Y0000000'
+         OR    15,0                X'D0000000'...X'YYYYMMDD'
+         JCT   14,&P.L
+         AGO   .RETURN    X'YYYYMMDD'
+.*=====================================================================
+.* Code to convert Gregorian date hex format to binary value
+.*---------------------------------------------------------------------
+.*
+.*                 Steps of conversion
+.*
+.*            | ----R0----- | ----R1----- | ----R14---- | ----R15---- |
+.*            | X'YYYYMMDD' |             |             |             |
+.*            |             |             |             | F'00000000' |
+.*            |             |             | F'00000008' |             |
+.*            | X'YYYYMMDD' | X'YYYYMMDD' |             |             |
+.*            | X'00000000' | X'YYYYMMDD' |             |             |
+.*            | X'0000000Y' | X'YYYMMDD0' |             |             |
+.*            |             |             |             | F'00000000' |
+.*            |             |             |             | F'0000000Y' |
+.*            |             |             | F'00000007' |             |
+.*            | X'00000000' | X'YYYMMDD0' |             |             |
+.*            | X'0000000Y' | X'YYMMDD00' |             |             |
+.*            |             |             |             | F'000000Y0' |
+.*            |             |             |             | F'000000YY' |
+.*            |             |             | F'00000006' |             |
+.*            |             |             | ........... |             |
+.*            |             |             | F'00000001' |             |
+.*            | X'00000000' | X'D0000000' |             |             |
+.*            | X'0000000D' | X'00000000' |             |             |
+.*            |             |             |             | F'YYYYMMD0' |
+.*            |             |             |             | F'YYYYMMDD' |
+.*            |             |             | F'00000000' |             |
+.*.....................................................................
+.GX#GF   ANOP  ,         X'YYYYMMDD'
+ MNOTE *,'Gregorian date as X''YYYYMMDD'' from &FROM'
+ MNOTE *,'Gregorian date as F''YYYYMMDD'' into &TO'
+         XR    15,15     prepare accumlator
+         LA    14,8      number of digits = 8
+         LR    1,0       X'YYYYMMDD'
+&P.H     XR    0,0       prepare to accept a single digit
+         SLDL  0,4       X'0000000Y,YYYMMDD0'...X'0000000D,00000000'
+         MHI   15,+10             F'00000000'...F'YYYYMMD0'
+         ALR   15,0               F'0000000Y'...F'YYYYMMDD'
+         JCT   14,&P.H
+.*
+         AGO   .RETURN   F'YYYYMMDD'
+.*=====================================================================
+.* Code to convert Gregorian date binary format to Rata Die value
+.*---------------------------------------------------------------------
+.*       YYYYMMDD                   Gregorian date
+.*       YYYY MM DD                 Gregorian year-month-day
+.*       MM<3?   yyyy-=1;mm+=11     virtual year-month
+.*
+.*    MAR APR MAY JUN JUL AUG SEP OCT NOV DEC JAN FEB MAR APR MAY JUN
+.* MM: 03  04  05  06  07  08  09  10  11  12 ][Ìì01  02  03  04  05  06  065900
+.* YY:------------0000-----------------------><-----------0001-------
+.* mm: 00  01  02  03  04  05  06  07  08  09  10  11 ][Ìì00  01  02  03  066100
+.* yy:<----------------0000--------------------------><-------0001---
+.*
+.*          mm = 0  1  2  3   4   5   6   7   8   9  10  11
+.*       DMÌì12[]={0,31,61,92,122,153,184,214,245,275,306,337}            066500
+.*           g =              0       1      2     3    4
+.*       DYÌì5[] ={       1168775  146097  36524  1461  365  }            066700
+.*       YYÌì5[] ={          3200     400    100     4    1  }            066800
+.*
+.* YYYYMMDD   yyyymmdd     3200     400    100     4    1
+.* --------   --------  -------  ------  -----  ----  ---
+.* 00010101   00001001
+.*                  01....................................+000000001
+.*                10......................................+000000306
+.*            0000            0       0      0     0    0
+.*               :            0       0      0     0    0
+.*               :            0       0      0     0    0 +000000000
+.*               :........................................=000000307
+.*
+.* YYYYMMDD   yyyymmdd     3200     400    100     4    1
+.* --------   --------  -------  ------  -----  ----  ---
+.* 20230101   20221001
+.*                  01....................................+000000001
+.*                10......................................+000000306
+.*            2022            0    2000      0    20    2
+.*               :            0       5      0     5    2
+.*               :            0  730485      0  7305  730 +000738520
+.*               :........................................=000738827
+.*
+.* YYYYMMDD   yyyymmdd     3200     400    100     4    1
+.* --------   --------  -------  ------  -----  ----  ---
+.* 20230201   20221101
+.*                  01....................................+000000001
+.*                11......................................+000000337
+.*            2022            0    2000      0    20    2
+.*               :            0       5      0     5    2
+.*               :            0  730485      0  7305  730 +000738520
+.*               :........................................=000738858
+.*
+.* YYYYMMDD   yyyymmdd     3200     400    100     4    1
+.* --------   --------  -------  ------  -----  ----  ---
+.* 20230301   20230001
+.*                  01....................................+000000001
+.*                00......................................+000000000
+.*            2023            0    2000      0    20    3
+.*               :            0       5      0     5    3
+.*               :            0  730485      0  7305 1095 +000738885
+.*               :........................................=000738886
+.*
+.GF#RD   ANOP  ,         F'YYYYMMDD'
+ MNOTE *,'Gregorian date as F''YYYYMMDD'' from &FROM'
+ MNOTE *,'Rata Die as F''00RRRRRR'' into &TO'
+*       Split date YYYYMMDD into YYYYMM and DD
+         SRDL  0,32        F'00000000,YYYYMMDD'
+         D     0,=F'100'   F'000000DD',F'00YYYYMM'
+         LR    15,0        F'000000DD'
+*       Split date YYYYMM into YYYY and MM
+         XR    0,0         F'00000000,00YYYYMM'
+         D     0,=F'100'   F'000000MM',F'0000YYYY'
+*       Recalculate MM=1...12 to mm=0...11, and yyyy from 0
+*       to make day 1 = 0000/03/01
+         AHI   0,-3        mm=(MM-3)   [Ìì1...12]-->[2...9]               072200
+         JNM   &P.B        if result is [Ìì0...9] it's OK                 072300
+         AHI   0,+&MYEAR   mm=(MM+13)  -->[Ìì0...11]                      072400
+         BCTR  1,0         yyyy=(YYYY-1)
+&P.B     EQU   *
+.* R15=DD, R0=mmÌì[00...11], R1=yyyy                                      072700
+*       Summarize the day of month, plus days of previous months
+         LR    14,0           F'000000mm' month [Ìì00...11]               072900
+         SLL   14,1           mm*2 = index to reach halfword value
+         AH    15,=H'&MONTAB'(14) R15+=DM (days in previous months)
+.* R15=jjj (initial part of Rata Die), R1=yyyy
+.*
+*       Summarize the number of days in all previous groups of years
+         LA    14,=F'&NRTAB' the table of grouped years/days
+*       Check the remainder of yet not used number of years
+&P.C     LTR   1,1           F'0000yyyy'  check the remainder of years
+         JNP   &P.X          check for no more years
+*       Divide the remaining years by new group size
+         XR    0,0           F'00000000,0000yyyy'
+         D     0,&NRYEARF    F'00000yyy',F'000000NN'
+.*            remaining years------>|||          ||
+.*            number of full groups, 0-24 ------>||
+.* Possible multiplication of NN by values up to 1168775
+.* can be replaced with the loop (1 to max of 24) to add huge values,
+.* in order not to use pair of registers to multiply full words.
+         LTR   1,1           check for NN>0?
+         JNP   &P.W          skip years accumulation if zero NN
+*      Accumulate extra number of days to get Rata Die at the end
+         A     15,&NRDAYF    F'000rrrrr'  accumulated Rata Die
+         JCT   1,*-4         repeat days addition NN times
+&P.W     EQU   *
+.*
+         LA    14,&NRNEXT    bump to next years/days row
+         LR    1,0           F'00000yyy' remainder of years
+         J     &P.C
+&P.X     EQU   *
+*       Adjust to start from day 1 = 0001/01/01
+         AHI   15,-&RDOFF    justify to Rata Die standard
+*
+         AGO   .RETURN   F'RRRRRRRR'   Rata Die
+.*=====================================================================
+.* Code for conversion Rata Die value to Gregorian date binary format
+.*---------------------------------------------------------------------
+.*       RRRRRRRR                   Rata Die from 0001/01/01
+.*       rrrrrrrr                   Rata Die from 0000/03/01
+.*       yyyy mm dd                 virtual date
+.*       MM>9?   YYYY+=1;MM-=10     real year and month
+.*       MM<10?          MM+=3      real month
+.*       YYYY MM DD                 real date
+.*       YYYYMMDD                   Gregorian date
+.*
+.* Shift year and month 'YYYYMM' to virtual year and month 'yyyymm'
+.* to simplify leap days count
+.*    MAR APR MAY JUN JUL AUG SEP OCT NOV DEC JAN FEB MAR APR MAY JUN
+.* MM: 03  04  05  06  07  08  09  10  11  12][Ìì01  02  03  04  05  06   077600
+.* YY:------------0000-----------------------><-----------0001-------
+.* mm: 00  01  02  03  04  05  06  07  08  09  10  11][Ìì00  01  02  03   077800
+.* yy:<----------------0000--------------------------><-------0001---
+.*
+.*          mm = 0  1  2  3   4   5   6   7   8   9  10  11 YEAR
+.*       DMÌì13[]={0,31,61,92,122,153,184,214,245,275,306,337,365}        078200
+.*       group =              0       1      2     3    4
+.*       DYÌì5[] ={       1168775  146097  36524  1461  365  }            078400
+.*       YYÌì5[] ={          3200     400    100     4    1  }            078500
+.*
+.*   Example 1:
+.* RRRRRRRR   rrrrrrrr  1168775  146097  36524  1461  365
+.* --------   --------  -------  ------  -----  ----  ---
+.* 00000001==>00000307        0       0      0     0  307 +00000307
+.*                            0       0      0     0    0
+.*            0000............0       0      0     0    0 =00000000
+.*                  01....................................=00000307
+.*                10
+.* 00010101<==00001001
+.* YYYYMMDD   yyyymmdd
+.*
+.*   Example 2:
+.* RRRRRRRR   rrrrrrrr  1168775  146097  36524  1461  365
+.* --------   --------  -------  ------  -----  ----  ---
+.* 00001155==>00001461     1461    1461   1461     0    0 +00001461
+.*                            0       0      0     1    0
+.*            0003............0       0      0     4    0 =00000004
+.*                  29....................................=00000366
+.*                11
+.* 00040229<==00031129
+.* YYYYMMDD   yyyymmdd
+.*
+.*   Example 3:
+.* RRRRRRRR   rrrrrrrr  1168775  146097  36524  1461  365
+.* --------   --------  -------  ------  -----  ----  ---
+.* 00738521==>00738827   738827    8342   8342  1037  307 +00738827
+.*                            0       5      0     5    2
+.*            2022............0    2000      0    20    2 =00002022
+.*                  01....................................=00000307
+.*                10
+.* 20230101<==20221001
+.* YYYYMMDD   yyyymmdd
+.*
+.RD#GF   ANOP  ,         F'RRRRRRRR'   day starting from 0001/01/01
+ MNOTE *,'Rata Die as F''00RRRRRR'' from &FROM'
+ MNOTE *,'Gregorian date as F''YYYYMMDD'' into &TO'
+.*
+*       Divide Rata Die by days in each possible group
+         LA    14,=F'&NRTAB'    =F'GGGG,DDDD,L,...'
+.*      Shift Rata Die to start from 0000/03/01
+         AHI   0,+&RDOFF F'00rrrrrr'   add offset from 0000/03/01
+*       Start year accumulation loop
+         XR    15,15     F'00000000'  years accumulator
+&P.Y     EQU   *      R0=F'00rrrrrr'  day starting from 0000/03/01
+         SRDL  0,32             F'00000000,00rrrrrr'
+.*       divide rest of days by days-in-the-group
+         D     0,&NRDAYF        F'0000rrrr',F'000000gg' gg<25!
+.*       multiply the number of groups by years-in-the-group
+         MH    1,&NRYEARH       F'000000yy' = years in these groups
+.*       add new years to total years counter
+         AR    15,1             F'00000yyy' = total years so far
+.*
+.*       check for end-of-table as fool-proof test
+         CLC   =H'&Y1',&NRYEARH  end of years table?
+         JNL   &P.M             --> break to month analyzis
+.*
+.*       check if extra days remain to split them into years?
+.*      IF days > 365           --> GOTO next year check
+         CHI   0,+&DYEAR        days remainder < year end?
+         JL    &P.M             YES - break to month analyzis
+&P.N     EQU   *
+         LA    14,&NRNEXT       bump to next row of years table
+         J     &P.Y             Repeat loop if not ended yet
+&P.M     EQU   *
+*       Correction of last year days
+*       R1  = remaining days within the last year
+*       R15 = total number of years accumulated
+         LTR   1,0              non-zero days left?
+         JP    &P.S             should be the same year
+         AHI   15,-1            otherwise - previous year
+         LHI   1,+&D1           full days of normal year
+         A     1,&NRLEAP        possible leap day, either 1 or 0
+&P.S     EQU   *
+*       R1=F'00000rrr' day number as Julian day
+         LA    14,=H'&MONTAB'   month conversion table
+         LHI   0,+3             month counter F'00000003' = March
+*       Start month search loop counting in Ìì[03...14], to simplify      086300
+&P.C     EQU   *
+.*       Check for end of table first, to handle leap day, or bad data
+         CLC  =H'&DYEAR',&NEXTMON check for the last month in table
+         JNH   &P.D             break the month loop
+.*       Then check for the month overrun
+         CH    1,&NEXTMON       compare days to start of next month
+         JNH   &P.D             break the month loop
+         AHI   0,+1             count next month number F'000000mm'
+         LA    14,&NEXTMON      bump to the next month value
+         J     &P.C             repeat month search loop if not end
+&P.D     EQU   *
+.*
+*       Month number calculated as [Ìì13...14] change to Ìì[01...02]        0876
+         CHI   0,+&MYEAR        check month range Ìì[03...12] or [Ìì13,14]? 0877
+         JNH   &P.F             if month [Ìì03...12] leave it as is       087800
+         AHI   0,-&MYEAR        change month Ìì[13,14] to Ìì[01,02]         0879
+         AHI   15,+1            change year number to next year
+&P.F     EQU   *
+.*
+         SH    1,&MDAYNUM       Julian day => Day of month FROM BEG!!
+*       Combine YYYY MM DD ---> single F'YYYYMMDD'
+         MHI   15,+100          F'0000YYYY'-->F'00YYYY00' shift
+         AR    15,0             F'00YYYYMM'   combine with month
+         MHI   15,+100          F'YYYYMM00'   shift
+         AR    15,1             F'YYYYMMDD'   combine with day
+*       R15=F'YYYYMMDD'   Gregorian date
+.*
+         AGO   .RETURN
+.*=====================================================================
+.* Code for conversion Rata Die value to Gregorian hex format
+.*---------------------------------------------------------------------
+.RD#GX   ANOP  ,             F'00RRRRRR'
+         DATECONV RD-GF,(0),(0)  F'00RRRRRR'->F'YYYYMMDD'
+         DATECONV GF-GX,(0),(15) F'YYYYMMDD'->X'YYYYMMDD'
+         AGO   .RETURN       X'YYYYMMDD'
+.*=====================================================================
+.* Code for conversion Rata Die value to Julian hex format
+.*---------------------------------------------------------------------
+.RD#JX   ANOP  ,             F'00RRRRRR'
+         DATECONV RD-JF,(0),(0)  F'00RRRRRR'->F'0YYYYJJJ'
+         DATECONV GF-GX,(0),(15) F'0YYYYJJJ'->X'0YYYYJJJ'
+         AGO   .RETURN       X'0YYYYJJJ'
+.*=====================================================================
+.* Code for conversion Rata Die value to Julian date format
+.*---------------------------------------------------------------------
+.RD#JF   ANOP  ,             F'00RRRRRR'
+         DATECONV RD-GF,(0),(0)  F'00RRRRRR'->F'YYYYMMDD'
+         DATECONV GF-JF,(0),(15) F'YYYYMMDD'->F'0YYYYJJJ'
+         AGO   .RETURN       F'0YYYYJJJ'
+.*=====================================================================
+.* Code for conversion Gregorian date hex format to Rata Die value
+.*---------------------------------------------------------------------
+.GX#RD   ANOP  ,             X'YYYYMMDD'
+         DATECONV GX-GF,(0),(0)  X'YYYYMMDD'->F'YYYYMMDD'
+         DATECONV GF-RD,(0),(15) F'YYYYMMDD'->F'00RRRRRR'
+         AGO   .RETURN       F'00RRRRRR'
+.*=====================================================================
+.* Code for conversion Gregorian hex format to Julian bin format
+.*---------------------------------------------------------------------
+.GX#JF   ANOP  ,             X'YYYYMMDD'
+         DATECONV GX-GF,(0),(0)  X'YYYYMMDD'->F'YYYYMMDD'
+         DATECONV GF-JF,(0),(15) F'YYYYMMDD'->F'0YYYYJJJ'
+         AGO   .RETURN       F'0YYYYJJJ'
+.*=====================================================================
+.* Code for conversion Gregorian hex format to Julian hex format
+.*---------------------------------------------------------------------
+.GX#JX   ANOP  ,             X'YYYYMMDD'
+         DATECONV GX-JF,(0),(0)  X'YYYYMMDD'->F'0YYYYJJJ'
+         DATECONV GF-GX,(0),(15) F'0YYYYJJJ'->X'0YYYYJJJ'
+         AGO   .RETURN       X'0YYYYJJJ'
+.*=====================================================================
+.* Code for conversion Julian bin format to Gregorian date hex format
+.*---------------------------------------------------------------------
+.JF#GX   ANOP  ,             F'0YYYYJJJ'
+         DATECONV JF-GF,(0),(0)  F'0YYYYJJJ'->F'YYYYMMDD'
+         DATECONV GF-GX,(0),(15) F'YYYYMMDD'->X'YYYYMMDD'
+         AGO   .RETURN       X'YYYYMMDD'
+.*=====================================================================
+.* Code for conversion Julian bin format to Rata Die day number
+.*---------------------------------------------------------------------
+.JF#RD   ANOP  ,             F'0YYYYJJJ'
+         DATECONV JF-GF,(0),(0)  F'0YYYYJJJ'->F'YYYYMMDD'
+         DATECONV GF-RD,(0),(15) F'YYYYMMDD'->F'00RRRRRR'
+         AGO   .RETURN       F'00RRRRRR'
+.*=====================================================================
+.* Code for conversion Gregorian bin format to Julian hex format
+.*---------------------------------------------------------------------
+.GF#JX   ANOP  ,             F'YYYYMMDD'
+         DATECONV GF-JF,(0),(0)  F'YYYYMMDD'->F'0YYYYJJJ'
+         DATECONV GF-GX,(0),(15) F'0YYYYJJJ'->X'0YYYYJJJ'
+         AGO   .RETURN       X'0YYYYJJJ'
+.*=====================================================================
+.* Code for date validation
+.*---------------------------------------------------------------------
+.GF#GF   ANOP  ,             F'YYYYMMDD'
+         DATECONV GF-RD,(0),(0)
+         DATECONV RD-GF,(0),(15)
+         AGO   .RETURN       F'yyyymmdd'
+.*
+.GX#GX   ANOP  ,             X'YYYYMMDD'
+.G8#G8   ANOP  ,             X'YYYYMMDD'
+.G5#G5   ANOP  ,             X'YYYYMMDD'
+         DATECONV GX-RD,(0),(0)
+         DATECONV RD-GX,(0),(15)
+         AGO   .RETURN       X'yyyymmdd'
+.*
+.JF#JF   ANOP  ,             F'0YYYYJJJ'
+         DATECONV JF-RD,(0),(0)
+         DATECONV RD-JF,(0),(15)
+         AGO   .RETURN       F'0yyyyjjj'
+.*
+.JX#JX   ANOP  ,             X'0YYYYJJJ'
+.J8#J8   ANOP  ,             X'0YYYYJJJ'
+.J4#J4   ANOP  ,             X'0YYYYJJJ'
+         DATECONV JX-RD,(0),(0)
+         DATECONV RD-JX,(0),(15)
+         AGO   .RETURN       X'0yyyyjjj'
+.*=====================================================================
+.* Common code to save output value from REG 15
+.*---------------------------------------------------------------------
+.RETREG0 ANOP  ,
+         LR    15,0               pass input to output
+.RETURN  ANOP  ,
+         LCLC  &TO0,&TO1,&TO4
+.*      References to parts of decimal output field
+&TO0     SETC  '&TO'
+&TO1     SETC  '&TO+1'
+&TO4     SETC  '&TO+4'
+         AIF   ('&TO'(1,1) NE '(').TOFRM
+&TO0     SETC  '0&TO'
+&TO1     SETC  '1&TO'
+&TO4     SETC  '4&TO'
+.*
+.TOFRM   ANOP
+         LCLC  &F2
+&F2      SETC  '&FORMATS'(4,2)    output format code
+.*
+.*      Special processing for packed decimal output formats
+         AIF   ('&F2' EQ 'G8').INTOG8
+         AIF   ('&F2' EQ 'G5').INTOG5
+         AIF   ('&F2' EQ 'J8').INTOJ8
+         AIF   ('&F2' EQ 'J4').INTOJ4
+.*
+.*      Special processing for register output formats
+         AIF   ('&TO'(1,1) EQ '(').TOREG
+         ST    15,&TO    save result value
+         AGO   .SAVED
+.*
+.*      Special processing for REG 15 output data
+.TOREG   AIF   ('&TO(1)' EQ '15' OR '&TO(1)' EQ 'R15').TOR15
+         LR    &TO(1),15    save result value
+         AGO   .SAVED
+.*
+.TOR15   ANOP
+ MNOTE *,'Result returned in REG 15'
+         AGO   .SAVED
+.*
+.INTOG8  ANOP  ,
+ MNOTE *,'Output data as PL8''YYYYMMDD'' into &TO0'
+         XR    14,14                X'00000000'
+         SLDL  14,4                 X'0000000Y,YYYMMDD0'
+         O     15,=X'0000000C'      X'0000000Y,YYYMMDDC'
+         STCM  14,B'1111',&TO0      X'0000000Y'
+         STCM  15,B'1111',&TO4      X'YYYMMDDC'
+         AGO   .SAVED               PL8'YYYYMMDD'
+.*
+.INTOG5  ANOP  ,
+ MNOTE *,'Output data as PL5''YYYYMMDD'' into &TO0'
+         XR    14,14                X'00000000'
+         SLDL  14,4                 X'0000000Y,YYYMMDD0'
+         O     15,=X'0000000C'      X'0000000Y,YYYMMDDC'
+         STC   14,&TO0              X'0Y'
+         STCM  15,B'1111',&TO1      X'YYYMMDDC'
+         AGO   .SAVED               PL5'YYYYMMDD'
+.*
+.INTOJ8  ANOP  ,
+ MNOTE *,'Output data as PL8''YYYYJJJ'' into &TO0'
+         XR    14,14                X'00000000'
+         SLDL  14,4                 X'00000000,YYYYJJJ0'
+         O     15,=X'0000000C'      X'00000000,YYYYJJJC'
+         STCM  14,B'1111',&TO0      X'00000000'
+         STCM  15,B'1111',&TO4      X'YYYYJJJC'
+         AGO   .SAVED               PL8'YYYYJJJ'
+.*
+.INTOJ4  ANOP  ,
+ MNOTE *,'Output data as PL4''YYYYJJJ'' into &TO0'
+         SLL   15,4                 X'YYYYJJJ0'
+         O     15,=X'0000000C'      X'YYYYJJJC'
+         STCM  15,B'1111',&TO0      X'YYYYJJJC'
+         AGO   .SAVED               PL4'YYYYJJJ'
+.*
+.SAVED   ANOP
+.*---------------------------------------------------------------------
+.*
+         MEND
